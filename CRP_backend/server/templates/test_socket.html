@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html>
+    
+    <body>
+
+        <label id="info">Connecting ...</label>
+
+        <div>
+            <div>
+                <label>Select Experiment</label>
+                <select id="exp_select"></select>
+
+                <label>Data Index</label>
+                <input type="number" id="data_index" value="0">
+
+                <label>Select Layer</label>
+                <select id="layer_index"></select>
+
+                <label>Select LRP method</label>
+                <select id="method_index"></select>
+
+                <label>Select analysis mode</label>
+                <select id="mode_select"></select>
+
+                <label>Filter Index</label>
+                <input type="number" id="filter_index" value="0">
+
+                <label>Zero Filter Indices (string with comma)</label>
+                <input type="string" id="zero_filter_indices" value="">
+
+                <label>Weight act partial heatmap:</label>
+                <select id="select_weighting">
+                    <option value="0">0</option>
+                    <option value="1">1</option>
+                </select>
+
+                <label>Select target wrt analysis:</label>
+                <select id="select_target"></select>
+
+                <label>Select Nr. Filters for global</label>
+                <input type="number" id="nr_filter_global" value="10">
+                
+
+            </div>
+            
+            <button id="btn_image" onclick="get_data()">Get Image</button>
+            <button id="btn_heatmap" onclick="get_heatmap()">Get Heatmap</button>
+            <button id="btn_global" onclick="get_global_analysis()">Global Analysis with mode</button>
+            <button id="btn_synthetic" onclick="vis_synthetic()">Vis Synthetic</button>
+            <button id="btn_activation" onclick="vis_realistic('max_activation')">Vis Activation</button>
+            <button id="btn_relevance" onclick="vis_realistic('max_relevance')">Vis Max Relevance</button>
+            <button id="btn_relevance_target" onclick="vis_realistic('max_relevance_target')">Vis Relevance Target</button>
+            <button id="btn_partial" onclick="vis_partial_heatmap()">Vis Partial Heatmaps</button>
+            <button id="btn_realistic_heatmaps" onclick="vis_realistic_heatmaps()">Vis Selected Filter Example Heatmaps</button>
+            <button id="btn_statistics" onclick="vis_statistics()">Vis Statistic with mode</button>
+            <button id="btn_statistics_heatmaps" onclick="vis_statistics_heatmaps()">Vis Statistic Example Heatmaps</button>
+            <button id="btn_statistics_heatmaps" onclick="vis_statistics_heatmaps()">Vis Statistic Example Heatmaps</button>
+            <button id="btn_local" onclick="get_local_analysis()">Test Local Analysis in console log</button>
+            <button id="btn_graph" onclick="get_attribution_graph()">Test Attribution Graph in console log</button>
+
+            <button id="btn_activation_single" onclick="vis_realistic_single_filter('max_activation')">Vis Activation Filter</button>
+            <button id="btn_relevance_single" onclick="vis_realistic_single_filter('max_relevance')">Vis Relevance Filter</button>
+            
+        </div>
+
+        <div>
+            <figure>
+                <label id="fig_ground_truth"></label>
+                <figcaption>Selected Image</figcaption>
+                <img id="fig_image" width="300" height="300" />
+                
+            </figure>
+
+            <figure>
+                <label id="fig_prediction"></label>
+                <label id="fig_pred_confidence"></label>
+                Heatmap w.r.t to
+                <label id="wrt"></label>
+                <figcaption>Heatmap</figcaption>
+                <img id="fig_heatmap" width="300" height="300"/>
+                
+            </figure>
+                
+        </div>
+
+        <div id="div_rel_layer"></div>
+        
+        <div id="filter_images"></div>
+        
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js" integrity="sha512-q/dWJ3kcmjBLU4Qc47E4A9kTB4m3wuTY7vkFJDTZKjTs8jhyGQnaUrxa0Ytd0ssMZhbNua9hE+E7Qv1j+DyZwA==" crossorigin="anonymous"></script>
+        <script type="text/javascript" charset="utf-8">
+            //var socket = io();
+            var socket = io.connect(
+                'http://' + document.domain + ':' + location.port,
+                {transports: ['websocket']}
+            );
+            //socket.origins('*:*')
+            
+            var flag = true; //run only once socket.emit('get_XAI_available')
+            socket.on('connect', function() {
+                document.getElementById("info").innerHTML = "User connected!"
+                if (flag) {
+                    socket.emit('get_XAI_available');
+                    flag = false;
+                } 
+            });
+
+            socket.on('receive_data', receive_data);
+            socket.on('receive_XAI_available', receive_XAI_available)
+            socket.on('receive_global_analysis', receive_global_analysis)
+            socket.on('receive_local_analysis', receive_local_analysis)
+            socket.on('receive_realistic', receive_realistic)
+            socket.on('receive_synthetic', receive_synthetic)
+            socket.on('receive_heatmap', receive_heatmap)
+            socket.on('receive_example_heatmaps', receive_example_heatmaps)
+            socket.on('receive_statistics', receive_statistics)
+            socket.on('receive_statistics_heatmaps', receive_statistics_heatmaps)
+            socket.on('receive_partial_heatmap', receive_partial_heatmap)
+            socket.on('receive_attribution_graph', receive_attribution_graph)
+            socket.on('receive_realistic_graph', receive_realistic)
+            socket.on('receive_synthetic_graph', receive_synthetic)
+
+            //global variables
+            var list_filter = null;
+            var relevance_filter = null;
+            var relevance_layer = null;
+            ///////////////////
+
+            function receive_heatmap(data) {
+
+                relevance_layer = data["rel_layer"];
+                document.getElementById("div_rel_layer").innerHTML = ""
+                for (name in relevance_layer) {
+                    before = document.getElementById("div_rel_layer").innerHTML
+                    document.getElementById("div_rel_layer").innerHTML = before + " " + name + " " + relevance_layer[name]
+                }
+
+                var arrayBufferView = new Uint8Array(data['image']);
+                var blob = new Blob( [ arrayBufferView ], { type: "image/jpeg" } );
+
+                var img_url = URL.createObjectURL(blob);
+                document.getElementById("fig_heatmap").src = img_url;
+                document.getElementById("fig_prediction").innerHTML = 
+                    data['pred_classes'][0]+ "||" + data['pred_classes'][1] + "||" + data['pred_classes'][2]+ "||" + data['pred_classes'][3];
+
+                document.getElementById("fig_pred_confidence").innerHTML = 
+                    data['pred_confidences'][0] + "||" + data['pred_confidences'][1] + "||" + data['pred_confidences'][2] + "||" + data['pred_confidences'][3]
+                
+                document.getElementById("wrt").innerHTML = data["wrt"]
+                //console.log(data['pred_confidences'])
+                }
+            
+            function get_attribution_graph() {
+               
+                meta_data = {
+                    "layer" : document.getElementById('layer_index').value, 
+                    "experiment" : document.getElementById("exp_select").value,
+                    "image_index" : document.getElementById("data_index").value,
+                    "method" : document.getElementById("method_index").value,
+                    "size": -1,
+                    "view_prev": 1,
+                    "mode": document.getElementById("mode_select").value,
+                    "filter_index" : document.getElementById("filter_index").value,
+                    "weight_activation": 0,
+                    //target_class in cookie for test only
+                }
+
+                mode = document.getElementById("mode_select").value;
+                mode_json = {
+                    "size": -1,
+                    "sample_indices" : "0:8",
+                }
+
+                socket.emit("get_attribution_graph", meta_data, mode, mode_json)
+
+            }
+
+            function get_heatmap() {
+
+
+                meta_data = {
+                    'image_index': document.getElementById('data_index').value,
+                    "experiment": document.getElementById("exp_select").value,
+                    "method": document.getElementById("method_index").value,
+                    "N_pred": 0,
+                    "zero_list_filter": read_zero_filter_indices(),
+                    "zero_layer": document.getElementById('layer_index').value,
+                    "target_class": document.getElementById("select_target").value,
+                }
+
+                socket.emit("get_heatmap", meta_data)
+
+            }
+
+            function vis_realistic(mode) {
+                if (list_filter == null){
+                    return
+                }
+
+                document.getElementById("filter_images").innerHTML = ""
+                document.getElementById("div_rel_layer").innerHTML = ""
+                
+                meta_data = {
+                    "layer" : document.getElementById('layer_index').value, 
+                    "experiment" : document.getElementById("exp_select").value,
+                    "list_filter" : list_filter,
+                    "size" : -1,
+                    "sample_indices" : "0:8",
+                    "mode": mode
+                    //target_class in cookie for test only
+
+                }
+
+                socket.emit("vis_realistic", meta_data)
+
+            }
+
+            function vis_realistic_single_filter(mode) {
+  
+
+                document.getElementById("filter_images").innerHTML = ""
+                document.getElementById("div_rel_layer").innerHTML = ""
+                
+                meta_data = {
+                    "layer" : document.getElementById('layer_index').value, 
+                    "experiment" : document.getElementById("exp_select").value,
+                    "list_filter" : [parseInt(document.getElementById("filter_index").value, 10)],
+                    "size" : -1,
+                    "sample_indices" : "0:32",
+                    "mode": mode
+                    //target_class in cookie for test only
+
+                }
+
+                socket.emit("vis_realistic", meta_data)
+
+            }
+
+            function vis_synthetic() {
+                if (list_filter == null){
+                    return
+                }
+
+                document.getElementById("filter_images").innerHTML = ""
+                
+                meta_data = {
+                    "layer" : document.getElementById('layer_index').value, 
+                    "experiment" : document.getElementById("exp_select").value,
+                    "list_filter" : list_filter,
+                    "size" : -1,
+
+                }
+
+                socket.emit("vis_synthetic", meta_data)
+            }
+
+            function vis_statistics() {
+
+                document.getElementById("filter_images").innerHTML = ""
+                
+                meta_data = {
+                    "layer" : document.getElementById('layer_index').value, 
+                    "experiment" : document.getElementById("exp_select").value,
+                    "filter_index" : document.getElementById("filter_index").value,
+                    "sample_indices" : "0:8",
+                    "size" : -1,
+                    "stats_mode" : document.getElementById("mode_select").value,
+                    "n_classes": 10
+                }
+
+                socket.emit("vis_statistics", meta_data)
+
+            }
+
+            function read_zero_filter_indices() {
+
+                var zero_filter_indices_t = document.getElementById("zero_filter_indices").value
+                
+                var splitted = zero_filter_indices_t.split(",")
+
+                var list_zero_filter = []
+                for (word of splitted) {
+                
+                    var number = parseInt(word);
+                    if (!isNaN(number)) {
+                        list_zero_filter.push(number)
+                    }
+                }
+
+                return list_zero_filter
+
+            }
+            
+            function get_global_analysis() {
+
+                document.getElementById("filter_images").innerHTML = ""
+
+                meta_data = {
+                            "layer" : document.getElementById('layer_index').value, 
+                            "experiment" : document.getElementById("exp_select").value,
+                            "filter_indices" : "0:" + document.getElementById("nr_filter_global").value,
+                            "sorting" : "max",
+                            "image_index" : document.getElementById("data_index").value,
+                            "method" : document.getElementById("method_index").value,
+                            "zero_list_filter": read_zero_filter_indices(),
+                            "zero_layer": document.getElementById('layer_index').value,
+                            "target_class": document.getElementById("select_target").value,
+                            }
+                
+                mode = document.getElementById("mode_select").value;
+                mode_json = {
+                    "size": -1,
+                    "sample_indices" : "0:8",
+                }
+                socket.emit('get_global_analysis', meta_data, mode, mode_json);
+            }
+
+            function get_local_analysis() {
+
+                meta_data = {
+                            "layer" : document.getElementById('layer_index').value, 
+                            "experiment" : document.getElementById("exp_select").value,
+                            "filter_indices" : "0:5",
+                            "sorting" : "max",
+                            "image_index" : document.getElementById("data_index").value,
+                            "method" : document.getElementById("method_index").value,
+                            "x": 0,
+                            "y": 0.5,
+                            "width": 0.1,
+                            "height": 0.1
+                            }
+                
+                socket.emit('get_local_analysis', meta_data, "", "");
+
+            }
+
+            function vis_realistic_heatmaps() {
+
+                meta_data = {
+                    "layer" : document.getElementById('layer_index').value, 
+                    "experiment" : document.getElementById("exp_select").value,
+                    "filter_index" : document.getElementById("filter_index").value,
+                    "size" : -1,
+                    "sample_indices" : "0:16",
+                    "mode": document.getElementById("mode_select").value,
+                    "method":  document.getElementById("method_index").value,
+                    //"target_class": document.getElementById("select_target").value,
+                }
+
+                socket.emit('vis_realistic_heatmaps', meta_data);
+
+            }
+
+            function vis_statistics_heatmaps() {
+                
+                document.getElementById("filter_images").innerHTML = ""
+
+                meta_data = {
+                    "layer" : document.getElementById('layer_index').value, 
+                    "experiment" : document.getElementById("exp_select").value,
+                    "filter_index" : document.getElementById("filter_index").value,
+                    "sample_indices" : "0:8",
+                    "size" : -1,
+                    "stats_mode" : document.getElementById("mode_select").value,
+                    "n_classes": 4
+                }
+
+                socket.emit('vis_statistics_heatmaps', meta_data);
+
+            }
+
+
+            function vis_partial_heatmap() {
+                if (list_filter == null){
+                    return
+                }
+
+                meta_data = {
+                            "layer" : document.getElementById('layer_index').value, 
+                            "experiment" : document.getElementById("exp_select").value,
+                            "list_filter" : list_filter,
+                            "image_index" : document.getElementById("data_index").value,
+                            "method" : document.getElementById("method_index").value,
+                            "size" : -1,
+                            "weight_activation": document.getElementById("select_weighting").value,
+                            "target_class":  document.getElementById("select_target").value,
+                            
+                            }
+                
+                socket.emit('vis_partial_heatmap', meta_data);
+                
+            }
+
+            function generate_img_row(binary_dict, text)
+            {
+
+                var elem_div = document.createElement("div");
+                elem_div.innerHTML = text;
+
+                for (id in binary_dict) {
+
+                    var elem_img = document.createElement("img");
+                    elem_img.width = "150";
+                    elem_img.height = "150";
+                    elem_div.appendChild(elem_img);
+                    
+                    var arrayBufferView = new Uint8Array(binary_dict[id]);
+                    var blob = new Blob( [ arrayBufferView ], { type: "image/jpeg" } );
+
+                    var img_url = URL.createObjectURL(blob);
+                    elem_img.src = img_url;
+                }
+
+                document.getElementById("filter_images").appendChild(elem_div);
+                
+            }
+
+            function receive_global_analysis(json_data) {
+                
+                list_filter = json_data["filter_indices"];
+                relevance_filter = json_data["relevance"];
+
+            }
+
+            function receive_local_analysis(json_data) {
+                console.log(json_data)
+                
+            }
+
+            function receive_attribution_graph(attr_graph) {
+            
+                console.log(attr_graph)
+                document.getElementById("filter_images").innerHTML = ""
+
+            }
+
+            function receive_partial_heatmap(binary_dict, json_data) {
+
+
+                elem_div = document.getElementById("filter_images")
+                elem_div.innerHTML = ""
+
+                for (f of list_filter) {
+                    text = "index " + f + " pos " + json_data["pos_filter"][f]
+                    binary_img = binary_dict[f]
+                    generate_img_row({0 : binary_img}, text)
+                }
+
+            }
+
+            function receive_realistic(binary_dict, json_data) {
+                
+                filter_index = json_data["filter_index"]
+                layer_name = json_data["layer"]
+                document.getElementById("div_rel_layer").innerHTML = "Rel in " + layer_name + " " + relevance_layer[layer_name]
+                var text = "index " + filter_index + " " + layer_name + " relevance " + relevance_filter[filter_index]
+                generate_img_row(binary_dict, text)
+
+            }
+
+            function receive_statistics(binary_dict, json_data) {
+
+                name = json_data["class_name"]
+                rel = json_data["class_rel"]
+                var text = "class " +  name + " relevance " + rel
+                generate_img_row(binary_dict, text)
+
+            }
+
+            function receive_statistics_heatmaps(binary_dict, json_data) {
+
+                name = json_data["class_name"]
+                rel = json_data["class_rel"]
+                var text = "class " +  name + " relevance " + rel
+                generate_img_row(binary_dict, text)
+
+                }
+
+            function receive_example_heatmaps(binary_dict, json_data) {
+
+                elem_div = document.getElementById("filter_images")
+                elem_div.innerHTML = ""
+
+                filter_index = json_data["filter_index"]
+                var text = "index " + filter_index
+
+                generate_img_row(binary_dict, text)
+
+            }
+
+            function receive_synthetic(binary_dict, json_data) {
+
+                elem_div = document.getElementById("filter_images")
+                elem_div.innerHTML = ""
+
+                step_percent = json_data["step_percent"]
+                layer_name = json_data["layer"]
+
+                for (f of list_filter) {
+                    text = "index " + f + " " + layer_name + " relevance " + relevance_filter[f] + "step " + step_percent
+                    binary_img = binary_dict[f]
+                    generate_img_row({0 : binary_img}, text)
+                }
+
+            }
+
+            function receive_data(data) {
+                
+
+                var arrayBufferView = new Uint8Array(data['image']);
+                var blob = new Blob( [ arrayBufferView ], { type: "image/jpeg" } );
+
+                var img_url = URL.createObjectURL(blob);
+                document.getElementById("fig_image").src = img_url;
+                document.getElementById("fig_ground_truth").innerHTML = data['ground_truth'];
+                
+                flag = true;
+                for (x of document.getElementById("select_target").options) {
+                    if (x == data["default_target_name"]) {
+                        flag = false;
+                    }
+                }
+                if (flag) {
+                    var el = document.createElement("option");
+                    el.innerHTML = data["default_target_name"];
+                    el.vlaue = data["default_target_name"];
+                    document.getElementById("select_target").appendChild(el);
+                }   
+                document.getElementById("select_target").value = data["default_target_name"];
+
+            }
+
+            function get_data() {
+                
+                socket.emit('get_data', {'image_index': document.getElementById('data_index').value,
+                                        "experiment": document.getElementById("exp_select").value});
+            }
+
+            target_names = null
+
+            function receive_XAI_available(data) {
+
+                console.log(data)
+
+                var select = document.getElementById("method_index");
+                for (i in data["methods"]) {
+                    
+                    var el = document.createElement("option");
+                    //el.textContent = opt;
+                    el.innerHTML = data["methods"][i];
+                    select.appendChild(el);
+                }
+
+                
+                var select = document.getElementById("exp_select");
+
+                for (i in data["experiments"]) {
+                    
+                    var el = document.createElement("option");
+                    //el.textContent = opt;
+                    el.innerHTML = data["experiments"][i];
+                    select.appendChild(el);
+                }
+
+                all_layers = data["layers"]
+                all_layer_modes = data["layer_modes"]
+
+                var key = document.getElementById('exp_select').value
+
+                var select = document.getElementById("layer_index");
+                select.innerHTML = ""
+                for (i in all_layers[key]) {
+                        
+                        var el = document.createElement("option");
+                        el.innerHTML = all_layers[key][i];
+                        select.appendChild(el);
+                    }  
+
+                target_names = data["target_names"];
+            }
+
+
+            document.getElementById('exp_select').addEventListener('change', 
+            (e) => {
+            
+                var key = document.getElementById('exp_select').value
+                
+                var select = document.getElementById("layer_index");
+                select.innerHTML = ""
+                for (i in all_layers[key]) {
+                        
+                        var el = document.createElement("option");
+                        //el.textContent = opt;
+                        el.innerHTML = all_layers[key][i];
+                        select.appendChild(el);
+                    }
+                
+
+                list_filter = null;
+                relevance_filter = null;
+
+                
+                var select_target = document.getElementById("select_target");
+                select_target.innerHTML = ""
+
+                for (i of target_names[key]) {
+                    
+                    var el = document.createElement("option");
+                    el.innerHTML = i;
+                    el.value = i
+                    select_target.appendChild(el);
+                }
+                
+
+            }
+            );
+
+            document.getElementById('layer_index').addEventListener('change', 
+            (e) => {
+            
+                var key_exp = document.getElementById('exp_select').value
+                var key_layer = document.getElementById("layer_index").value;
+                
+                var select = document.getElementById("mode_select");
+                select.innerHTML = ""
+                for (mode in all_layer_modes[key_exp][key_layer]) {
+                        
+                        if (all_layer_modes[key_exp][key_layer][mode] == 1)
+                        {
+                            var el = document.createElement("option");
+                            el.innerHTML = mode;
+                            select.appendChild(el);
+                        }
+                        
+                    }
+                list_filter = null;
+                relevance_filter = null;
+            }
+            );
+
+
+        </script>
+
+    </body>
+
+</html>
