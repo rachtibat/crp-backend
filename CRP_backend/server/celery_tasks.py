@@ -67,16 +67,6 @@ class DataTask(Task):
             self.fv.add_receptive_field(self.rf)
 
 
-#TODO: delete
-@celapp.task(bind=True, base=DataTask)
-def long_task(self):
-    
-    self.update_state(state='PROGRESS', meta={'whats up': 2})
-    print("loooong taask")
-
-    self.socketio.emit('on postman', {'data': 'loaoaoooong taask'})
-
-
 @celapp.task(bind=True, base=ModelTask)
 def get_available_exp(self, name, device):
 
@@ -87,7 +77,7 @@ def get_available_exp(self, name, device):
     
 
 @celapp.task(bind=True, base=DataTask, ignore_result=True)
-def get_sample(self, name, sid, index, size):
+def get_sample(self, job, name, sid, index, size):
 
     self.get_interface(name)
     data, groud_truth = self.fv.get_data_sample(index, preprocessing=False)
@@ -100,13 +90,13 @@ def get_sample(self, name, sid, index, size):
     image = self.interface.visualize_sample(data, size)
     binary = self.interface.convert_to_binary(image)
 
-    meta_data = {"image": binary, "index": index, "target": targets}
+    meta_data = {"index": index, "target": targets, "job_id": job,}
 
-    self.socketio.emit("receive_sample", meta_data, to=sid)
+    self.socketio.emit("receive_sample", (binary, meta_data), to=sid)
 
 
 @celapp.task(bind=True, base=ModelTask, ignore_result=True)
-def calc_heatmap(self, name: str, device: str, sid, index: int, comp_name: str, target: int, size: int):
+def calc_heatmap(self, job, name: str, device: str, sid, index: int, comp_name: str, target: int, size: int):
 
     self.get_interface(name, device)
 
@@ -130,11 +120,17 @@ def calc_heatmap(self, name: str, device: str, sid, index: int, comp_name: str, 
     for l_name in relevances:
         rel_l[l_name] = str(torch.sum(relevances[l_name]).item())
 
-    self.socketio.emit("receive_heatmap", {"image": binary, "index": index,
-        "pred_names": dec_pred[0], "pred_confidences": dec_pred[1], "rel_layer": rel_l}, to=sid)
+    meta_data = {
+        "index": index,
+        "pred_names": dec_pred[0],
+        "pred_confidences": dec_pred[1], 
+        "rel_layer": rel_l, 
+        "job_id": job}
+
+    self.socketio.emit("receive_heatmap", (binary, meta_data), to=sid)
 
 @celapp.task(bind=True, base=ModelTask, ignore_result=True)
-def attribute_concepts(self, name: str, device: str, sid, index, comp_name, target, layer_name, abs_norm, descending):
+def attribute_concepts(self, job, name: str, device: str, sid, index, comp_name, target, layer_name, abs_norm, descending):
 
     self.get_interface(name, device)
 
@@ -155,13 +151,14 @@ def attribute_concepts(self, name: str, device: str, sid, index, comp_name, targ
     meta_data = {
         "concept_ids": sorted_c_ids.tolist(),
         "relevance": {c_id.item(): rel_c[c_id].item() for c_id in sorted_c_ids},
+        "job_id": job,
     }
 
     self.socketio.emit("receive_global_analysis", meta_data, to=sid)
 
 
 @celapp.task(bind=True, base=DataTask, ignore_result=True)
-def get_max_reference(self, name, sid, c_id, layer_name, mode, s_indices, size):
+def get_max_reference(self, job, name, sid, c_id, layer_name, mode, s_indices, size):
 
     self.get_interface(name)
 
@@ -178,6 +175,7 @@ def get_max_reference(self, name, sid, c_id, layer_name, mode, s_indices, size):
         "concept_id": c_id,
         "layer": layer_name,
         "mode": mode,
+        "job_id": job,
     }
         
     self.socketio.emit("receive_maximization_realistic", (binary_list, meta_data), to=sid)
@@ -185,7 +183,7 @@ def get_max_reference(self, name, sid, c_id, layer_name, mode, s_indices, size):
 
 
 @celapp.task(bind=True, base=ModelTask, ignore_result=True)
-def get_max_reference_heatmap(self, name, device, sid, c_id, layer_name, mode, comp_name, s_indices, size):
+def get_max_reference_heatmap(self, job, name, device, sid, c_id, layer_name, mode, comp_name, s_indices, size):
 
     self.get_interface(name, device)
 
@@ -203,13 +201,14 @@ def get_max_reference_heatmap(self, name, device, sid, c_id, layer_name, mode, c
         "concept_id": c_id,
         "layer": layer_name,
         "mode": mode,
+        "job_id": job,
     }
         
     self.socketio.emit("receive_maximization_heatmaps", (binary_list, meta_data), to=sid)
  
 
 @celapp.task(bind=True, base=ModelTask, ignore_result=True)
-def concept_condional_heatmaps(self, name, device, sid, index, concept_ids, layer_name, target, comp_name, init_rel, size):
+def concept_condional_heatmaps(self, job, name, device, sid, index, concept_ids, layer_name, target, comp_name, init_rel, size):
 
     self.get_interface(name, device)
 
@@ -236,13 +235,15 @@ def concept_condional_heatmaps(self, name, device, sid, index, concept_ids, laye
     meta_data = {
         "layer": layer_name,
         "init_rel": init_rel,
+        "job_id": job,
+        "list_concept_ids": concept_ids
     }
         
     self.socketio.emit("receive_conditional_heatmaps", (binary_dict, meta_data), to=sid)
 
 
 @celapp.task(bind=True, base=DataTask, ignore_result=True)
-def concept_statistics(self, name, sid, c_id, layer_name, mode, top_N):
+def concept_statistics(self, job, name, sid, c_id, layer_name, mode, top_N):
 
     self.get_interface(name)
 
@@ -253,14 +254,15 @@ def concept_statistics(self, name, sid, c_id, layer_name, mode, top_N):
         "layer": layer_name,
         "mode": mode,
         "targets": targets.tolist(),
-        "values": values.tolist()
+        "values": values.tolist(),
+        "job_id": job,
     }
         
     self.socketio.emit("receive_statistics", meta_data, to=sid)
 
 
 @celapp.task(bind=True, base=DataTask, ignore_result=True)
-def concept_statistics_realistic(self, name, sid, c_id, layer_name, target, mode, s_range, size):
+def concept_statistics_realistic(self, job, name, sid, c_id, layer_name, target, mode, s_range, size):
 
     self.get_interface(name)
 
@@ -277,14 +279,15 @@ def concept_statistics_realistic(self, name, sid, c_id, layer_name, target, mode
         "concept_id": c_id,
         "layer": layer_name,
         "mode": mode,
-        "target": target
+        "target": target,
+        "job_id": job
     }
         
     self.socketio.emit("receive_stats_realistic", (binary_list, meta_data), to=sid)
 
 
 @celapp.task(bind=True, base=ModelTask, ignore_result=True)
-def concept_statistics_heatmaps(self, name, device, sid, c_id, layer_name, target, mode, s_range, comp_name, size):
+def concept_statistics_heatmaps(self, job, name, device, sid, c_id, layer_name, target, mode, s_range, comp_name, size):
 
     self.get_interface(name, device)
 
@@ -302,7 +305,8 @@ def concept_statistics_heatmaps(self, name, device, sid, c_id, layer_name, targe
         "concept_id": c_id,
         "layer": layer_name,
         "mode": mode,
-        "target": target
+        "target": target,
+        "job_id": job
     }
         
     self.socketio.emit("receive_stats_heatmaps", (binary_list, meta_data), to=sid)
@@ -333,7 +337,7 @@ def reduce_ch_accuracy(rel_layer, accuracy=0.90):
 
 
 @celapp.task(bind=True, base=ModelTask, ignore_result=True)
-def compute_local_analysis(self, name, device, sid, index, target, comp_name, layer, abs_norm, x, y, width, height, descending):
+def compute_local_analysis(self, job, name, device, sid, index, target, comp_name, layer, abs_norm, x, y, width, height, descending):
 
     self.get_interface(name, device)
 
@@ -362,14 +366,15 @@ def compute_local_analysis(self, name, device, sid, index, target, comp_name, la
 
     meta_data = {
         "concept_ids": c_indices.tolist(),
-        "relevance": rel_c[c_indices].tolist()
+        "relevance": rel_c[c_indices].tolist(),
+        "job_id": job,
     }
     self.socketio.emit("receive_local_analysis", meta_data, to=sid)
     
     
 
 @celapp.task(bind=True, base=ModelTask, ignore_result=True)
-def compute_attribution_graph(self, name, device, sid, index: int, comp_name: str, c_id, layer: str, target: int, parent_c_id, parent_layer, abs_norm):
+def compute_attribution_graph(self, job, name, device, sid, index: int, comp_name: str, c_id, layer: str, target: int, parent_c_id, parent_layer, abs_norm):
 
     self.get_interface(name, device)
     
@@ -390,5 +395,6 @@ def compute_attribution_graph(self, name, device, sid, index: int, comp_name: st
     json_data = {
         "nodes" : js_nodes,
         "links": js_links,
+        "job_id": job
     }
     self.socketio.emit("receive_attribution_graph", (json_data,), to=sid)

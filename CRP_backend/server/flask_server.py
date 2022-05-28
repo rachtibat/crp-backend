@@ -29,6 +29,9 @@ def disconnected():
 
 def get_available(json_response):
     """
+    Receives:
+    {}
+
     Answers:
         {"experiment name": {
             "layer_names": list of str,
@@ -51,18 +54,18 @@ def vis_sample(json_response):
         {"image": binary, "index": int, "target": list}
     """
 
-    keys = ["index", "experiment", "size"]
+    keys = ["job_id", "index", "experiment", "size"]
 
     key_values = extract_json_keys(json_response, session, keys)
     if key_values:
-        index, experiment, size = key_values
+        job, index, experiment, size = key_values
     else:
         return f"Keyword error. Available are {keys}", 404
 
     session["index"] = index  # save as cookie #TODO: delete
     session["experiment"] = experiment
 
-    get_sample.apply_async((experiment, request.sid, index, size))
+    get_sample.apply_async((job, experiment, request.sid, index, size))
 
 
 def vis_heatmap(json_response):
@@ -75,12 +78,12 @@ def vis_heatmap(json_response):
         "pred_confidences": list, "rel_layer": dict}
     """
 
-    keys = ["index", "experiment", "size",
+    keys = ["job_id", "index", "experiment", "size",
             "method", "top_N", "target", "zero_list_filter", "zero_layer"]
 
     key_values = extract_json_keys(json_response, session, keys)
     if key_values:
-        index, experiment, size, method, top_N, target, \
+        job, index, experiment, size, method, top_N, target, \
             zero_list_filter, zero_layer = key_values
     else:
         return f"Keyword error. Available are {keys}", 404
@@ -88,7 +91,7 @@ def vis_heatmap(json_response):
     # session["method"] = method  # save as cookie
 
     device = EXPERIMENTS[experiment]
-    calc_heatmap.apply_async((experiment, device, request.sid, index, method, target, size), queue=experiment)
+    calc_heatmap.apply_async((job, experiment, device, request.sid, index, method, target, size), queue=experiment)
 
 
 def get_global_analysis(json_response):
@@ -100,18 +103,18 @@ def get_global_analysis(json_response):
 
     """
 
-    keys = ["index", "experiment", "method", "layer", "descending", "abs_norm",
+    keys = ["job_id", "index", "experiment", "method", "layer", "descending", "abs_norm",
             "target", "zero_list_filter", "zero_layer"]
 
     key_values = extract_json_keys(json_response, session, keys)
     if key_values:
-        index, experiment, method, layer, descending, abs_norm, \
+        job, index, experiment, method, layer, descending, abs_norm, \
             target, zero_list_filter, zero_layer = key_values
     else:
         return f"Keyword error. Available are {keys}", 404
 
     device = EXPERIMENTS[experiment]
-    attribute_concepts.apply_async((experiment, device, request.sid, index, method,
+    attribute_concepts.apply_async((job, experiment, device, request.sid, index, method,
                                    target, layer, abs_norm, descending), queue=experiment)
 
 
@@ -127,16 +130,16 @@ def vis_realistic(json_response):
         }
     """
 
-    keys = ["experiment", "size", "layer", "concept_id",
+    keys = ["job_id", "experiment", "size", "layer", "concept_id",
             "range", "mode"]
 
     key_values = extract_json_keys(json_response, session, keys)
     if key_values:
-        experiment, size, layer, concept_id, s_range, mode = key_values
+        job, experiment, size, layer, concept_id, s_range, mode = key_values
     else:
         return f"Keyword error. Available are {keys}", 404
 
-    get_max_reference.apply_async((experiment, request.sid, concept_id, layer, mode, s_range, size))
+    get_max_reference.apply_async((job, experiment, request.sid, concept_id, layer, mode, s_range, size))
 
 
 def vis_realistic_heatmaps(json_response):
@@ -151,29 +154,29 @@ def vis_realistic_heatmaps(json_response):
         }
     """
 
-    keys = ["experiment", "size", "layer", "concept_id",
+    keys = ["job_id", "experiment", "size", "layer", "concept_id",
             "range", "mode", "method"]
 
     key_values = extract_json_keys(json_response, session, keys)
     if key_values:
-        experiment, size, layer, concept_id, s_range, mode, method = key_values
+        job, experiment, size, layer, concept_id, s_range, mode, method = key_values
     else:
         return f"Keyword error. Available are {keys}", 404
 
     device = EXPERIMENTS[experiment]
     get_max_reference_heatmap.apply_async(
-        (experiment, device, request.sid, concept_id, layer, mode, method, s_range, size),
+        (job, experiment, device, request.sid, concept_id, layer, mode, method, s_range, size),
         queue=experiment)
 
 
 def vis_conditional_heatmaps(json_response):
 
-    keys = ["experiment", "size", "layer", "list_concept_ids",
+    keys = ["job_id", "experiment", "size", "layer", "list_concept_ids",
             "method", "init_rel", "index", "target"]
 
     key_values = extract_json_keys(json_response, session, keys)
     if key_values:
-        experiment, size, layer, concept_ids, method, init_rel, index, \
+        job, experiment, size, layer, concept_ids, method, init_rel, index, \
             target = key_values
     else:
         return f"Keyword error. Available are {keys}", 404
@@ -181,79 +184,81 @@ def vis_conditional_heatmaps(json_response):
     device = EXPERIMENTS[experiment]
 
     concept_condional_heatmaps.apply_async(
-        (experiment, device, request.sid, index, concept_ids, layer, target, method, init_rel, size),
+        (job, experiment, device, request.sid, index, concept_ids, layer, target, method, init_rel, size),
         queue=experiment)
 
 
 def get_statistics(json_response):
 
-    keys = ["experiment", "layer", "concept_id", "top_N", "mode"]
+    keys = ["job_id", "experiment", "layer", "concept_id", "top_N", "mode"]
 
     key_values = extract_json_keys(json_response, session, keys)
-    if key_values == -1:
-        return "wrong keyword values or keyword missing", 404
+    if key_values:
+        job, experiment, layer, concept_id, top_N, mode = key_values
     else:
-        experiment, layer, concept_id, top_N, mode = key_values
+        return f"Keyword error. Available are {keys}", 404
+        
 
-    concept_statistics.apply_async((experiment, request.sid, concept_id, layer, mode, top_N))
+    concept_statistics.apply_async((job, experiment, request.sid, concept_id, layer, mode, top_N))
 
 
 def vis_stats_realistic(json_response):
 
-    keys = ["experiment", "size", "layer", "concept_id", "range", "target", "mode"]
+    keys = ["job_id", "experiment", "size", "layer", "concept_id", "range", "target", "mode"]
 
     key_values = extract_json_keys(json_response, session, keys)
-    if key_values == -1:
-        return "wrong keyword values or keyword missing", 404
+    if key_values:
+        job, experiment, size, layer, concept_id, s_range, target, mode = key_values
     else:
-        experiment, size, layer, concept_id, s_range, target, mode = key_values
+        return f"Keyword error. Available are {keys}", 404
+        
 
-    concept_statistics_realistic.apply_async((experiment, request.sid, concept_id, layer, target, mode, s_range, size))
+    concept_statistics_realistic.apply_async((job, experiment, request.sid, concept_id, layer, target, mode, s_range, size))
 
 
 def vis_stats_heatmaps(json_response):
 
-    keys = ["experiment", "size", "layer", "concept_id", "range", "target", "mode", "method"]
+    keys = ["job_id", "experiment", "size", "layer", "concept_id", "range", "target", "mode", "method"]
 
     key_values = extract_json_keys(json_response, session, keys)
-    if key_values == -1:
-        return "wrong keyword values or keyword missing", 404
+    if key_values:
+        job, experiment, size, layer, concept_id, s_range, target, mode, method = key_values
     else:
-        experiment, size, layer, concept_id, s_range, target, mode, method = key_values
-
+        return f"Keyword error. Available are {keys}", 404
+        
     device = EXPERIMENTS[experiment]
 
     concept_statistics_heatmaps.apply_async(
-        (experiment, device, request.sid, concept_id, layer, target, mode, s_range, method, size),
+        (job, experiment, device, request.sid, concept_id, layer, target, mode, s_range, method, size),
         queue=experiment)
 
 
 def get_attribution_graph(json_response):
 
-    keys = ["experiment", "layer", "concept_id", "target", "method", "index", "parent_c_id", "parent_layer", "abs_norm"]
+    keys = ["job_id", "experiment", "layer", "concept_id", "target", "method", "index", "parent_c_id", "parent_layer", "abs_norm"]
 
     key_values = extract_json_keys(json_response, session, keys)
-    if key_values == -1:
-        return "wrong keyword values or keyword missing", 404
+    if key_values:
+        job, experiment, layer, concept_id, target, method, index, parent_c_id, parent_layer, abs_norm = key_values
     else:
-        experiment, layer, concept_id, target, method, index, parent_c_id, parent_layer, abs_norm = key_values
+        return f"Keyword error. Available are {keys}", 404        
 
     device = EXPERIMENTS[experiment]
 
     compute_attribution_graph.apply_async(
-        (experiment, device, request.sid, index, method, concept_id, layer, target, parent_c_id, parent_layer,
+        (job, experiment, device, request.sid, index, method, concept_id, layer, target, parent_c_id, parent_layer,
          abs_norm),
         queue=experiment)
 
 
 def get_local_analysis(json_response):
 
-    keys = ["index", "experiment", "method", "layer", "abs_norm",
+    keys = ["job_id", "index", "experiment", "method", "layer", "abs_norm",
             "target",  "x", "y", "width", "height", "descending"]
 
     key_values = extract_json_keys(json_response, session, keys)
     if key_values:
-        index, experiment, method, layer, abs_norm, \
+        job, index, experiment, method, layer, abs_norm, \
             target, x, y, width, height, descending = key_values
     else:
         return f"Keyword error. Available are {keys}", 404
@@ -261,7 +266,7 @@ def get_local_analysis(json_response):
     device = EXPERIMENTS[experiment]
 
     compute_local_analysis.apply_async(
-        (experiment, device, request.sid, index, target, method, layer, abs_norm, x, y, width, height, descending),
+        (job, experiment, device, request.sid, index, target, method, layer, abs_norm, x, y, width, height, descending),
         queue=experiment)
 
 
