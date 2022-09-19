@@ -17,5 +17,5 @@ $ pip install celery
 run setup.py
 ```shell
 $ git clone GITHUB REPOSITORY
-$ pip install ./??? -e
+$ pip install ./crp-backend -e
 ```
