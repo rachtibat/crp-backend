@@ -24,7 +24,10 @@ class Interface:
     def convert_to_binary(self):
 
         raise NotImplementedError("Interface must be implemented!")
-
+        
+    def mask_input_attribution(self):
+        raise NotImplementedError("Interface must be implemented!")
+    
     def get_model(self, device):
         """
         method initializes model (loading of weights, .eval(), shifting model to device etc.).

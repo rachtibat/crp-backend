@@ -72,8 +72,9 @@ def get_available_exp(self, name, device):
 
     self.get_interface(name, device)
     layer_names = list(self.layer_map.keys())
+    comp_names = list(self.composite_map.keys())
 
-    return {"layer_names": layer_names, "target_map": self.target_map}
+    return {"layer_names": layer_names, "target_map": self.target_map, "methods": comp_names}
     
 
 @celapp.task(bind=True, base=DataTask, ignore_result=True)
@@ -84,6 +85,8 @@ def get_sample(self, job, name, sid, index, size):
 
     try:
         targets = self.fv.multitarget_to_single(groud_truth)
+        if type(targets) is not list:
+            targets = targets.tolist()
     except NotImplementedError:
         targets = [groud_truth]
 
@@ -125,7 +128,8 @@ def calc_heatmap(self, job, name: str, device: str, sid, index: int, comp_name: 
         "pred_names": dec_pred[0],
         "pred_confidences": dec_pred[1], 
         "rel_layer": rel_l, 
-        "job_id": job}
+        "job_id": job,
+        "target": target}
 
     self.socketio.emit("receive_heatmap", (binary, meta_data), to=sid)
 
