@@ -2,8 +2,6 @@ from tabnanny import verbose
 from celery import Celery, Task
 from flask_socketio import SocketIO
 import torch
-import math
-
 from CRP_backend.utils import get_interface
 import CRP_backend.server.config as config
 
@@ -260,8 +258,9 @@ def concept_statistics(self, job, name, sid, c_id, layer_name, mode, top_N):
         "targets": targets.tolist(),
         "values": values.tolist(),
         "job_id": job,
+        "experiment": name
     }
-        
+    
     self.socketio.emit("receive_statistics", meta_data, to=sid)
 
 
@@ -284,7 +283,8 @@ def concept_statistics_realistic(self, job, name, sid, c_id, layer_name, target,
         "layer": layer_name,
         "mode": mode,
         "target": target,
-        "job_id": job
+        "job_id": job,
+        "experiment": name
     }
         
     self.socketio.emit("receive_stats_realistic", (binary_list, meta_data), to=sid)
@@ -310,7 +310,8 @@ def concept_statistics_heatmaps(self, job, name, device, sid, c_id, layer_name, 
         "layer": layer_name,
         "mode": mode,
         "target": target,
-        "job_id": job
+        "job_id": job,
+        "experiment": name
     }
         
     self.socketio.emit("receive_stats_heatmaps", (binary_list, meta_data), to=sid)
