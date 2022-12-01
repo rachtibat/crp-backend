@@ -23,7 +23,7 @@ def extract_json_keys(json, session, keys):
         if key == "mask_id" or key == "size" or key == "index" or key == "synthetic" \
                 or key == "cnn_activation" or key == "view_prev" or key == "activations"  \
                     or key == "weight_activation" or key == "n_classes" or key == "filter_index" \
-                    or key == "top_N" or key == "target" or key == "concept_id":
+                    or key == "top_N" or key == "target" or key == "concept_id" or key == "rf":
             value = int(value)
 
         elif key == "x" or key == "y" or key == "width" or key == "height" or key == "threshold" or key == "sigma":

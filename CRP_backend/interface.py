@@ -7,8 +7,8 @@ import zennit
 from zennit.composites import COMPOSITES
 
 from crp.attribution import CondAttribution
-from crp.graph import trace_model_graph
-from crp.image import imgify
+from crp.image import imgify, vis_img_heatmap, vis_opaque_img
+from crp.cache import ImageCache
 
 
 class Interface:
@@ -107,6 +107,11 @@ class Interface:
         
         raise NotImplementedError("Interface must be implemented!") 
 
+    def get_ref_plot_map(self) -> Dict[str, Tuple]:
+
+        raise NotImplementedError("Interface must be implemented!") 
+
+
 
 class Image2D(Interface):
 
@@ -119,15 +124,25 @@ class Image2D(Interface):
 
     def visualize_heatmap(self, tensor, size, padding=False):
 
-        return imgify(tensor, "bwr", symmetric=True, resize=(size, size), padding=padding) 
+        return imgify(tensor, cmap="bwr", symmetric=True, resize=size, padding=padding) 
 
     def visualize_sample(self, tensor, size, padding=True):
         
         # remove batch dimension
-        if len(tensor.shape) == 4:
+        if isinstance(tensor, torch.Tensor) and len(tensor.shape) == 4:
             tensor = tensor[0]
 
-        return imgify(tensor, resize=(size, size), padding=padding)
+        return imgify(tensor, resize=size, padding=padding)
+
+    def get_ref_plot_map(self):
+
+        cache = ImageCache()
+
+        plot_map = {
+            "image and heatmap": (vis_img_heatmap, cache),
+            "opaque": (vis_opaque_img, cache),
+        }
+        return plot_map
 
     def mask_input_attribution(self, heatmap, x, y, width, height):
 

@@ -19,3 +19,20 @@ run setup.py
 $ git clone GITHUB REPOSITORY
 $ pip install ./crp-backend -e
 ```
+
+configure CRP_backend/server/config.py
+
+## Security Recommendation
+celery uses pickle to serialize images sent between processes.
+To increase safety, create a username and password for your rabbitmq broker by:
+
+```shell
+$ sudo rabbitmqctl add_user username password
+$ sudo rabbitmqctl set_user_tags username administrator
+```
+
+and edit the config.py with
+```python
+broker_url = 'amqp://username:password@localhost//'
+
+```

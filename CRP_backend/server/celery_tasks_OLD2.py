@@ -1,11 +1,12 @@
+from tabnanny import verbose
 from celery import Celery, Task
 from flask_socketio import SocketIO
 import torch
+from CRP_backend.utils import get_interface
+import CRP_backend.server.config as config
 from typing import Tuple
 
 import crp.helper
-from CRP_backend.utils import get_interface
-import CRP_backend.server.config as config
 
 # celery -A celery_server worker --loglevel=INFO
 # celery -A celery_server worker -P solo -l info
@@ -16,81 +17,88 @@ from click import Option
 celapp = Celery(__name__) 
 celapp.config_from_object(config)
 
-celapp.user_options['worker'].add(Option(('--experiment',), is_flag=True, help='Enable custom option.'))
-celapp.user_options['worker'].add(Option(('--device',), is_flag=True, help='Enable custom option.'))
+celapp.user_options['worker'].add(
+    Option(('--username',), is_flag=True, help='Enable custom option.')
+)
+
+
 
 class CustomArgs(bootsteps.Step):
 
-    def __init__(self, worker, experiment, device, **options):
+    def __init__(self, worker, username, **options):
         super().__init__(worker, **options)
 
-        if "cuda" in device:
-            GPUTask.initialize(experiment, device)
-        elif "cpu" in device:
-            CPUTask.initialize(experiment)
-        else:
-            raise ValueError("'device' must contain 'cuda' or 'cpu'")
+        print("hi", worker, username)
+
+        GPUTask.testing_around = username
+
 
 celapp.steps['worker'].add(CustomArgs)
 
+
 class GPUTask(Task):
 
-    interface = None
+    def __init__(self) -> None:
+        super().__init__()
 
-    @staticmethod
-    def initialize(name, device):
+        print("hasattr testing_around:", hasattr(self, "testing_around"))
 
-        if GPUTask.interface:
+
+    def initialize(self, name, device):
+
+        print("hasattr interface:", hasattr(self, "interface"))
+        print("hasattr testing_around:", hasattr(self, "testing_around"))
+
+        if hasattr(self, "interface"):
             # already initialized
             return None
 
         print(f"model loooading {name}")
-        GPUTask.interface = get_interface(name)
-        GPUTask.model = GPUTask.interface.get_model(device)
-        GPUTask.dataset = GPUTask.interface.get_dataset()
-        GPUTask.layer_map = GPUTask.interface.get_layer_map(GPUTask.model)
-        GPUTask.target_map = GPUTask.interface.get_target_map()
-        GPUTask.composite_map = GPUTask.interface.get_composite_map()
-        GPUTask.canonizers = GPUTask.interface.get_canonizers()
-        GPUTask.attribution = GPUTask.interface.get_CondAttribution(GPUTask.model)
-        GPUTask.fv = GPUTask.interface.get_FeatureVisualization(GPUTask.attribution, GPUTask.dataset, GPUTask.layer_map, device)
+        self.interface = get_interface(name)
+        self.model = self.interface.get_model(device)
+        self.dataset = self.interface.get_dataset()
+        self.layer_map = self.interface.get_layer_map(self.model)
+        self.target_map = self.interface.get_target_map()
+        self.composite_map = self.interface.get_composite_map()
+        self.canonizers = self.interface.get_canonizers()
+        self.attribution = self.interface.get_CondAttribution(self.model)
+        self.fv = self.interface.get_FeatureVisualization(self.attribution, self.dataset, self.layer_map, device)
 
-        GPUTask.plot_map = GPUTask.interface.get_ref_plot_map()
+        self.plot_map = self.interface.get_ref_plot_map()
         
-        single_sample = GPUTask.fv.get_data_sample(0)[0]
-        GPUTask.attgraph = GPUTask.interface.get_AttributionGraph(GPUTask.attribution, single_sample, GPUTask.layer_map)
+        single_sample = self.fv.get_data_sample(0)[0]
+        self.attgraph = self.interface.get_AttributionGraph(self.attribution, single_sample, self.layer_map)
 
-        GPUTask.socketio = SocketIO(message_queue='amqp://')
+        self.socketio = SocketIO(message_queue='amqp://')
 
 
 class CPUTask(Task):
 
-    interface = None
 
-    @staticmethod
-    def initialize(name):
+    def initialize(self, name):
 
-        if CPUTask.interface:
+        if hasattr(self, "interface"):
             # already initialized
             return None
 
         print(f"data loooading {name}")
-        CPUTask.interface = get_interface(name)
-        CPUTask.dataset = CPUTask.interface.get_dataset()
-        CPUTask.target_map = CPUTask.interface.get_target_map()
-        CPUTask.composite_map = CPUTask.interface.get_composite_map()
+        self.interface = get_interface(name)
+        self.dataset = self.interface.get_dataset()
+        self.target_map = self.interface.get_target_map()
+        self.composite_map = self.interface.get_composite_map()
 
-        CPUTask.fv = CPUTask.interface.get_FeatureVisualization(None, CPUTask.dataset, None, "cpu")
+        self.fv = self.interface.get_FeatureVisualization(None, self.dataset, None, "cpu")
 
-        CPUTask.plot_map = CPUTask.interface.get_ref_plot_map()
-        CPUTask.canonizers = CPUTask.interface.get_canonizers()
+        self.plot_map = self.interface.get_ref_plot_map()
+        self.canonizers = self.interface.get_canonizers()
 
-        CPUTask.socketio = SocketIO(message_queue='amqp://')
+        self.socketio = SocketIO(message_queue='amqp://')
 
 
 @celapp.task(bind=True, base=GPUTask)
 def get_available_exp(self, name, device):
 
+    self.initialize(name, device)
     layer_names = list(self.layer_map.keys())
     comp_names = list(self.composite_map.keys())
     plot_names = list(self.plot_map.keys())
@@ -101,6 +109,7 @@ def get_available_exp(self, name, device):
 @celapp.task(bind=True, base=CPUTask, ignore_result=True)
 def get_sample(self, job, name, sid, index, size):
 
+    self.initialize(name)
     data, groud_truth = self.fv.get_data_sample(index, preprocessing=False)
 
     try:
@@ -120,6 +129,8 @@ def get_sample(self, job, name, sid, index, size):
 
 @celapp.task(bind=True, base=GPUTask, ignore_result=True)
 def calc_heatmap(self, job, name: str, device: str, sid, index: int, comp_name: str, target: int, size: int):
+
+    self.initialize(name, device)
 
     data, _ = self.fv.get_data_sample(index, preprocessing=True)
     
@@ -154,6 +165,8 @@ def calc_heatmap(self, job, name: str, device: str, sid, index: int, comp_name: 
 @celapp.task(bind=True, base=GPUTask, ignore_result=True)
 def attribute_concepts(self, job, name: str, device: str, sid, index, comp_name, target, layer_name, abs_norm, descending):
 
+    self.initialize(name, device)
+
     data, _ = self.fv.get_data_sample(index, preprocessing=True)
 
     #EXP.XAI.set_zero_hook(zero_layer, zero_list_filter)
@@ -180,6 +193,8 @@ def attribute_concepts(self, job, name: str, device: str, sid, index, comp_name,
 @celapp.task(bind=True, base=CPUTask, ignore_result=False, serializer="pickle")
 def load_cache(self, exp_name, key, l_name, mode, r_range, comp_name, rf, fn_name, plot_name):
 
+    self.initialize(exp_name)
+
     plot_fn, cache = self.plot_map[plot_name]
 
     if cache is None:
@@ -205,6 +220,8 @@ def load_cache(self, exp_name, key, l_name, mode, r_range, comp_name, rf, fn_nam
 @celapp.task(bind=True, base=CPUTask, ignore_result=True)
 def save_cache(self, ref_c, exp_name, l_name, mode, r_range, comp_name, rf, fn_name, plot_name):
 
+    self.initialize(exp_name)
+
     composite = self.composite_map[comp_name](self.canonizers)
     plot_fn, cache = self.plot_map[plot_name]
 
@@ -213,6 +230,8 @@ def save_cache(self, ref_c, exp_name, l_name, mode, r_range, comp_name, rf, fn_n
     
 @celapp.task(bind=True, base=CPUTask, ignore_result=True)
 def send_reference(self, ref_c, job, exp_name, sid, c_id, l_name, mode, fn_name, plot_name, size, target=None):
+
+    self.initialize(exp_name)
 
     value = next(iter(ref_c.values()))
     
@@ -251,6 +270,8 @@ def send_reference(self, ref_c, job, exp_name, sid, c_id, l_name, mode, fn_name,
 @celapp.task(bind=True, base=GPUTask, ignore_result=False)
 def get_max_reference(self, exp_name, device, c_id: int, l_name, mode, r_range, comp_name, rf, plot_name):
 
+    self.initialize(exp_name, device)
+
     composite = self.composite_map[comp_name](self.canonizers)
     plot_fn, _ = self.plot_map[plot_name]
   
@@ -262,6 +283,8 @@ def get_max_reference(self, exp_name, device, c_id: int, l_name, mode, r_range, 
 
 @celapp.task(bind=True, base=GPUTask, ignore_result=False)
 def get_stats_reference(self, exp_name, device, c_id: int, l_name, target: int, mode, r_range, comp_name, rf, plot_name):
+
+    self.initialize(exp_name, device)
 
     composite = self.composite_map[comp_name](self.canonizers)
     plot_fn, _ = self.plot_map[plot_name]
@@ -275,6 +298,8 @@ def get_stats_reference(self, exp_name, device, c_id: int, l_name, target: int, 
 
 @celapp.task(bind=True, base=CPUTask, ignore_result=True)
 def concept_statistics(self, job, name, sid, c_id, layer_name, mode, top_N):
+
+    self.initialize(name)
 
     targets, values = self.fv.compute_stats(c_id, layer_name, mode, norm=True, top_N=top_N)
 
@@ -293,6 +318,8 @@ def concept_statistics(self, job, name, sid, c_id, layer_name, mode, top_N):
 
 @celapp.task(bind=True, base=GPUTask, ignore_result=True)
 def concept_condional_heatmaps(self, job, name, device, sid, index, concept_ids, layer_name, target, comp_name, init_rel, size):
+
+    self.initialize(name, device)
 
     data, _ = self.fv.get_data_sample(index, preprocessing=True)
     composite = self.composite_map[comp_name](self.canonizers)
@@ -351,6 +378,8 @@ def reduce_ch_accuracy(rel_layer, accuracy=0.90):
 @celapp.task(bind=True, base=GPUTask, ignore_result=True)
 def compute_local_analysis(self, job, name, device, sid, index, target, comp_name, layer, abs_norm, x, y, width, height, descending):
 
+    self.initialize(name, device)
+
     data, _ = self.fv.get_data_sample(index, preprocessing=True)
     composite = self.composite_map[comp_name](self.canonizers)
 
@@ -385,6 +414,8 @@ def compute_local_analysis(self, job, name, device, sid, index, target, comp_nam
 
 @celapp.task(bind=True, base=GPUTask, ignore_result=True)
 def compute_attribution_graph(self, job, name, device, sid, index: int, comp_name: str, c_id, layer: str, target: int, parent_c_id, parent_layer, abs_norm):
+
+    self.initialize(name, device)
     
     data, _ = self.fv.get_data_sample(index, preprocessing=True)
     composite = self.composite_map[comp_name](self.canonizers)

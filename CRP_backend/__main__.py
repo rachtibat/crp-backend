@@ -10,9 +10,16 @@ import torch.multiprocessing as mp
 mp.set_start_method("spawn", force=True)
 
 
-def start_celery_worker(hostname, queue, pool, concurrency=1):
+def start_celery_worker(hostname, experiment, device, pool, concurrency=1):
 
-    worker = celapp.Worker(hostname=hostname, pool=pool, loglevel="INFO", queues=[queue], concurrency=concurrency)
+    if "cuda" in device:
+        queue = experiment + "_cuda"
+    elif "cpu" in device:
+        queue = experiment + "_cpu"
+    else:
+        raise ValueError("'device' must contain 'cuda' or 'cpu'")
+
+    worker = celapp.Worker(hostname=hostname, pool=pool, loglevel="INFO", queues=[queue], concurrency=concurrency, experiment=experiment, device=device)
     worker.start()
 
 
@@ -22,26 +29,27 @@ def set_config():
 
 if __name__ == "__main__":
 
+    n_processes = 4
+
     node = config.celery_node_name
-    experiments = {"VGG16_ImageNet": "cuda:0"} #"LeNet_Fashion": "cuda:0", 
+    experiments = {"VGG16_bn_ImageNet": "cuda:0"} #"LeNet_Fashion": "cuda:0", 
     
-    ######## start GPU workers
     if "celery" in experiments:
         raise ValueError("The name 'celery' is reserved. Please rename your experiment.")
 
     processes = []
-    for i, e_name in enumerate(experiments):
+    for e_name, device in experiments.items():
 
-        p = mp.Process(target=start_celery_worker, args=(f"worker_{i}@{node}", e_name, "solo"))
+        ######## start GPU workers
+        p = mp.Process(target=start_celery_worker, args=(f"{device}_worker_{e_name}@{node}", e_name, device, "solo"))
         p.start()
         processes.append(p)
 
-    ######## start IO workers
-    #TODO: combine eventlet with prefork by spawning this in for loop with eventlet
-    n_processes = 4
-    p = mp.Process(target=start_celery_worker, args=(f"worker_IO@{node}", "celery", "prefork", n_processes))
-    p.start()
-    processes.append(p)
+        ######## start CPU workers
+        #TODO: combine eventlet with prefork by spawning this in for loop with eventlet
+        p = mp.Process(target=start_celery_worker, args=(f"cpu_worker_{e_name}@{node}", e_name, "cpu", "prefork", n_processes))
+        p.start()
+        processes.append(p)
 
     ######## flask
     p = mp.Process(target=run_socket_flask, args=(experiments, "0.0.0.0", config.flask_port))
