@@ -1,7 +1,5 @@
-!VGG16_bn_ImageNet/crp_interface.py
-!VGG16_bn_ImageNet/label_map.json
-
-VGG16_bn_ImageNet/
+VGG16_bn_ImageNet/A*
+VGG16_bn_ImageNet/R*
 cache/
 
 ### VSCODE
