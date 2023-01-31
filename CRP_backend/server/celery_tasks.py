@@ -236,7 +236,7 @@ def send_reference(self, ref_c, job, exp_name, sid, c_id, l_name, mode, fn_name,
     }
 
     if fn_name == "get_max_reference":
-        route = "receive_max_reference",
+        route = "receive_max_reference"
     elif fn_name == "get_stats_reference":
         route = "receive_stats_reference"
         if target is None:
