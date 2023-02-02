@@ -2,9 +2,11 @@
 Backend for Concept Relevance Propagation.
 Clean version with easy install.
 
+**!! Under active development! Don't expect working code !!**
+
 
 ## Description
-Read our awesome paper (:
+A cool mystery! If you run the code, anything could happen!
 
 ## Installation
 
